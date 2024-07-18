@@ -60,7 +60,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: RealTimeGraph(
-                    stream: stream,
+                    streams: [stream],
                   ),
                 ),
               ),
@@ -73,7 +73,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: RealTimeGraph(
-                    stream: stream,
+                    streams: [stream],
                     displayMode: ChartDisplay.points,
                   ),
                 ),
@@ -93,7 +93,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: RealTimeGraph(
-                    stream: stream.map((value) => value - 150),
+                    streams: [stream.map((value) => value - 150)],
                     supportNegativeValuesDisplay: true,
                     xAxisColor: Colors.black12,
                   ),
@@ -108,7 +108,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: RealTimeGraph(
-                    stream: stream.map((value) => value - 150),
+                    streams: [stream.map((value) => value - 150)],
                     supportNegativeValuesDisplay: true,
                     displayMode: ChartDisplay.points,
                     xAxisColor: Colors.black12,

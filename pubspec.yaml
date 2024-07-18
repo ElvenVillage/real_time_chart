@@ -1,5 +1,6 @@
 name: real_time_chart
-description: A Flutter package for displaying real-time charts with flexible customization options.
+description: A Flutter package for displaying real-time charts with flexible
+  customization options.
 version: 0.0.1
 homepage: https://github.com/tajaouart/real_time_chart
 
@@ -8,13 +9,13 @@ environment:
   flutter: ">=1.17.0"
 
 dependencies:
+  collection: ^1.18.0
   flutter:
     sdk: flutter
 
 dev_dependencies:
+  flutter_lints: ^2.0.0
   flutter_test:
     sdk: flutter
-  flutter_lints: ^2.0.0
 
-
-flutter:
+flutter: null

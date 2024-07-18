@@ -17,11 +17,12 @@
  * Contact: developer@tajaouart.com
  */
 
-
 import 'dart:async';
 import 'dart:math';
 
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:real_time_chart/real_time_chart.dart';
 
 import 'chart_display.dart';
 import 'point.dart';
@@ -42,7 +43,7 @@ class RealTimeGraph extends StatefulWidget {
     this.graphStroke = 1,
     this.axisStroke = 1.0,
     this.axisTextBuilder,
-    required this.stream,
+    required this.streams,
     this.minValue = 0,
     this.speed = 1,
     Key? key,
@@ -65,7 +66,7 @@ class RealTimeGraph extends StatefulWidget {
   final bool supportNegativeValuesDisplay;
 
   // The stream to listen to for new data.
-  final Stream<double> stream;
+  final List<Stream<double>> streams;
 
   // The frequency of updating the chart.
   final Duration updateDelay;
@@ -98,13 +99,15 @@ class RealTimeGraph extends StatefulWidget {
   RealTimeGraphState createState() => RealTimeGraphState();
 }
 
+typedef PainterData = Map<int, List<Point<double>>>;
+
 class RealTimeGraphState extends State<RealTimeGraph>
     with TickerProviderStateMixin {
-  // Subscription to the stream provided in the constructor
-  StreamSubscription<double>? streamSubscription;
+  // Subscriptions to streams provided in the constructor
+  List<StreamSubscription<double>>? streamSubscriptions;
 
   // List of data points to be displayed on the graph
-  List<Point<double>> data = [];
+  PainterData data = {};
 
   // Timer to periodically update the data for visualization
   Timer? timer;
@@ -117,20 +120,21 @@ class RealTimeGraphState extends State<RealTimeGraph>
     super.initState();
 
     // Subscribe to the stream provided in the constructor
-    streamSubscription = widget.stream.listen(_streamListener);
+    streamSubscriptions = widget.streams
+        .mapIndexed((idx, e) => e.listen((val) => _streamListener(idx, val)))
+        .toList();
 
     // Start a periodic timer to update the data for visualization
     timer = Timer.periodic(widget.updateDelay, (_) {
       // delete data that is no longer displayed on the graph.
-      data.removeWhere((element) => element.x < canvasWidth * -1.5);
+      for (final line in data.values) {
+        line.removeWhere((element) => element.x < canvasWidth * -1.5);
+      }
 
       // Clone the data to avoid modifying the original list while iterating
-      List<Point<double>> newData = data.map((e) => e).toList();
-
       // Increment the x value of each data point
-      for (var element in newData) {
-        element.x = element.x - widget.speed;
-      }
+      final newData = data.map((e, k) =>
+          MapEntry(e, k.map((e) => Point(e.x - widget.speed, e.y)).toList()));
 
       // Trigger a rebuild with the updated data
       setState(() {
@@ -139,14 +143,17 @@ class RealTimeGraphState extends State<RealTimeGraph>
     });
   }
 
+  Iterable<double> get total =>
+      data.values.expand((line) => line.expand((e) => [e.y]));
+
   // Maximum value of the y-axis of the graph
   double get maxValue {
     if (data.isEmpty) {
       return 0;
     }
 
-    final maxValue = data.map((point) => point.y).reduce(max);
-    final minValue = data.map((point) => point.y).reduce(min);
+    final maxValue = total.reduce(max);
+    final minValue = total.reduce(min);
 
     if (widget.supportNegativeValuesDisplay) {
       if (maxValue > minValue.abs()) {
@@ -165,8 +172,8 @@ class RealTimeGraphState extends State<RealTimeGraph>
       return 0;
     }
 
-    final maxValue = data.map((point) => point.y).reduce(max);
-    final minValue = data.map((point) => point.y).reduce(min);
+    final maxValue = total.reduce(max);
+    final minValue = total.reduce(min);
 
     if (widget.supportNegativeValuesDisplay) {
       if (maxValue > minValue.abs()) {
@@ -283,15 +290,16 @@ class RealTimeGraphState extends State<RealTimeGraph>
     );
   }
 
-  void _streamListener(double value) {
+  void _streamListener(int idx, double value) {
     // Insert the new data point in the beginning of the list
-    data.insert(0, Point(0, value));
+    data.putIfAbsent(idx, () => <Point<double>>[]);
+    data[idx]!.insert(0, Point(0, value));
   }
 
   @override
   void dispose() {
     // Clean up resources when the widget is removed from the tree
-    streamSubscription?.cancel();
+    streamSubscriptions?.forEach((e) => e.cancel);
     timer?.cancel();
     super.dispose();
   }
@@ -307,7 +315,7 @@ class _PointGraphPainter extends CustomPainter {
   });
 
   // List of data points to be plotted on the graph
-  final List<Point<double>> data;
+  final PainterData data;
 
   // Spacing between consecutive data points on the graph
   final double pointsSpacing;
@@ -321,6 +329,9 @@ class _PointGraphPainter extends CustomPainter {
   // Whether to support display of negative values on the graph
   final bool supportNegativeValuesDisplay;
 
+  Iterable<double> get total =>
+      data.values.expand((line) => line.expand((e) => [e.y]));
+
   @override
   void paint(Canvas canvas, Size size) {
     // Paint object used to draw the graph
@@ -332,8 +343,8 @@ class _PointGraphPainter extends CustomPainter {
     // If the data is not empty, calculate the maximum y value and the y scaling factor
     if (data.isNotEmpty) {
       // Calculate the maximum and minimum y values in the data
-      final maxY = data.map((point) => point.y).reduce(max);
-      final minY = data.map((point) => point.y).reduce(min);
+      final maxY = total.reduce(max);
+      final minY = total.reduce(min);
 
       // Calculate the scaling factor for the y values
       double yScale = 1;
@@ -350,40 +361,44 @@ class _PointGraphPainter extends CustomPainter {
         }
       }
 
-      // Iterate over the data points and draw them on the canvas
-      for (int i = 0; i < data.length - 1; i++) {
-        double y1 = data[i].y * yScale;
-        double x1 = data[i].x + size.width;
-        double y2 = data[i + 1].y * yScale;
-        double x2 = data[i + 1].x + size.width;
-        double yDiff = (y2 - y1).abs();
-        double xDiff = (x2 - x1).abs();
+      // Iterate over the lines first
+      for (var idx = 0; idx < data.keys.length; idx++) {
+        final data = this.data[idx]!;
+        // Iterate over the data points and draw them on the canvas
+        for (int i = 0; i < data.length - 1; i++) {
+          double y1 = data[i].y * yScale;
+          double x1 = data[i].x + size.width;
+          double y2 = data[i + 1].y * yScale;
+          double x2 = data[i + 1].x + size.width;
+          double yDiff = (y2 - y1).abs();
+          double xDiff = (x2 - x1).abs();
 
-        final distance = sqrt(pow(xDiff, 2) + pow(yDiff, 2));
-        // If the difference in y values or x values is large, add intermediate points
-        if (distance >= pointsSpacing) {
-          int numOfIntermediatePoints = (distance / pointsSpacing).round();
-          double yInterval = (y2 - y1) / numOfIntermediatePoints;
-          double xInterval = (x2 - x1) / numOfIntermediatePoints;
-          for (int j = 0; j <= numOfIntermediatePoints; j++) {
-            final intermediateY = y1 + yInterval * j;
-            final intermediateX = x1 + xInterval * j;
-            if (intermediateX.isFinite && intermediateY.isFinite) {
-              // Draw an intermediate point if it is within the canvas bounds
-              canvas.drawCircle(
-                Offset(intermediateX, yTranslation - intermediateY),
-                sqrt(graphStroke),
-                paint,
-              );
+          final distance = sqrt(pow(xDiff, 2) + pow(yDiff, 2));
+          // If the difference in y values or x values is large, add intermediate points
+          if (distance >= pointsSpacing) {
+            int numOfIntermediatePoints = (distance / pointsSpacing).round();
+            double yInterval = (y2 - y1) / numOfIntermediatePoints;
+            double xInterval = (x2 - x1) / numOfIntermediatePoints;
+            for (int j = 0; j <= numOfIntermediatePoints; j++) {
+              final intermediateY = y1 + yInterval * j;
+              final intermediateX = x1 + xInterval * j;
+              if (intermediateX.isFinite && intermediateY.isFinite) {
+                // Draw an intermediate point if it is within the canvas bounds
+                canvas.drawCircle(
+                  Offset(intermediateX, yTranslation - intermediateY),
+                  sqrt(graphStroke),
+                  paint,
+                );
+              }
             }
           }
+          // Draw the data point
+          canvas.drawCircle(
+            Offset(x1, yTranslation - y1),
+            sqrt(graphStroke),
+            paint,
+          );
         }
-        // Draw the data point
-        canvas.drawCircle(
-          Offset(x1, yTranslation - y1),
-          sqrt(graphStroke),
-          paint,
-        );
       }
     }
   }
@@ -401,7 +416,7 @@ class _LineGraphPainter extends CustomPainter {
   });
 
   // The data to be plotted in the graph
-  final List<Point<double>> data;
+  final PainterData data;
 
   // The width of the graph's lines
   final double graphStroke;
@@ -411,6 +426,9 @@ class _LineGraphPainter extends CustomPainter {
 
   // Whether to support display of negative values on the graph
   final bool supportNegativeValuesDisplay;
+
+  Iterable<double> get total =>
+      data.values.expand((line) => line.expand((e) => [e.y]));
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -424,8 +442,8 @@ class _LineGraphPainter extends CustomPainter {
 
     if (data.isNotEmpty) {
       // Calculate the maximum and minimum y values in the data
-      final maxY = data.map((point) => point.y).reduce(max);
-      final minY = data.map((point) => point.y).reduce(min);
+      final maxY = total.reduce(max);
+      final minY = total.reduce(min);
 
       // Calculate the scaling factor for the y values
       double yScale = 1;
@@ -442,17 +460,20 @@ class _LineGraphPainter extends CustomPainter {
         }
       }
 
-      // Start the path at the first data point
-      path.moveTo(
-        data.first.x + size.width,
-        yTranslation - (data.first.y * yScale),
-      );
+      for (var idx = 0; idx < data.length; idx++) {
+        // Start the path at the first data point
+        final data = this.data[idx]!;
+        path.moveTo(
+          data.first.x + size.width,
+          yTranslation - (data.first.y * yScale),
+        );
 
-      // Plot the lines between each subsequent data point
-      for (int i = 0; i < data.length - 1; i++) {
-        final y = data[i + 1].y * yScale;
-        final x = data[i + 1].x + size.width;
-        path.lineTo(x, yTranslation - y);
+        // Plot the lines between each subsequent data point
+        for (int i = 0; i < data.length - 1; i++) {
+          final y = data[i + 1].y * yScale;
+          final x = data[i + 1].x + size.width;
+          path.lineTo(x, yTranslation - y);
+        }
       }
     }
 

@@ -1,7 +1,7 @@
 #!/bin/sh
 # This is a generated file; do not edit or check into version control.
-export "FLUTTER_ROOT=/Users/aksel/development/flutter"
-export "FLUTTER_APPLICATION_PATH=/Users/aksel/Documents/GitHub/real_time_chart"
+export "FLUTTER_ROOT=/home/nintegra/flutter/flutter"
+export "FLUTTER_APPLICATION_PATH=/home/nintegra/psychology_app/packages/real_time_chart"
 export "COCOAPODS_PARALLEL_CODE_SIGN=true"
 export "FLUTTER_TARGET=lib/main.dart"
 export "FLUTTER_BUILD_DIR=build"
